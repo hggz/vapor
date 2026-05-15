@@ -1,7 +1,9 @@
-// WebSocket server upgrade requires WebSocketKit (pulls NIOSSL Swift, unbuildable on Windows).
-#if !os(Windows)
+// Server-side WebSocket upgrade. `WebSocket` and `WebSocketUpgrader` resolve to WebSocketKit
+// on non-Windows and to Vapor's Windows-only WSCore-backed shim on Windows.
 import NIOCore
+#if !os(Windows)
 import WebSocketKit
+#endif
 import NIOHTTP1
 
 extension Request {
@@ -21,5 +23,3 @@ extension Request {
          return res
      }
  }
-
-#endif // !os(Windows)

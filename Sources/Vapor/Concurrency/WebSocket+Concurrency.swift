@@ -1,9 +1,12 @@
-// WebSocket helpers depend on WebSocketKit, which pulls the NIOSSL Swift module (#error on
-// Windows). Gated out on Windows. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
-#if !os(Windows)
+// Server-side async WebSocket helpers and (non-Windows-only) WebSocket client helpers.
+// `WebSocket` / `WebSocketUpgrader` resolve to WebSocketKit on non-Windows; to Vapor's
+// Windows-only WSCore-backed shim on Windows. WebSocket.connect(...) is client-side and
+// requires WebSocketKit, so it stays gated to non-Windows.
 import NIOCore
 import NIOHTTP1
+#if !os(Windows)
 import WebSocketKit
+#endif
 import RoutingKit
 import Foundation
 
@@ -80,6 +83,7 @@ extension RoutesBuilder {
     }
 }
 
+#if !os(Windows)
 extension WebSocket {
     @preconcurrency
     public static func connect(
@@ -146,5 +150,4 @@ extension WebSocket {
         ).get()
     }
 }
-
-#endif // !os(Windows)
+#endif

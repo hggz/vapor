@@ -60,6 +60,13 @@ let package = Package(
         // WebSocket client library built on SwiftNIO
         .package(url: "https://github.com/vapor/websocket-kit.git", from: "2.13.0"),
 
+        // WSCore from swift-websocket — used ONLY on Windows as the WebSocket server runtime,
+        // replacing WebSocketKit (which transitively imports the NIOSSL Swift module — gated
+        // on Windows). Pinned to 1.5.0 because main branch added `import NIOSSL` to WSCore's
+        // WebSocketHandler.swift after that tag; 1.5.0 keeps WSCore Windows-buildable.
+        // See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+        .package(url: "https://github.com/hummingbird-project/swift-websocket.git", exact: "1.5.0"),
+
         // MultipartKit, Multipart encoding and decoding
         .package(url: "https://github.com/vapor/multipart-kit.git", from: "4.2.1"),
 
@@ -112,6 +119,12 @@ let package = Package(
                 // WebSocketUpgrader) are gated on Windows to match.
                 .product(name: "WebSocketKit", package: "websocket-kit",
                          condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
+                // WSCore (swift-websocket 1.5.0) is the Windows replacement for WebSocketKit's
+                // server-side machinery. It's pulled only on Windows; Vapor's
+                // Sources/Vapor/HTTP/Server/WebSocketWindows.swift uses it to provide the
+                // `WebSocket` facade and `WebSocketUpgrader` that the rest of Vapor wires into.
+                .product(name: "WSCore", package: "swift-websocket",
+                         condition: .when(platforms: [.windows])),
                 .product(name: "MultipartKit", package: "multipart-kit"),
                 .product(name: "Atomics", package: "swift-atomics"),
                 // _NIOFileSystem has no Windows port upstream (see HANDOFF-vapor-investigation
