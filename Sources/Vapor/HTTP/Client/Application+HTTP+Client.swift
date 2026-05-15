@@ -1,3 +1,9 @@
+// AsyncHTTPClient pulls NIOSSL Swift module unconditionally. NIOSSL Swift has
+// #error("unsupported os") on Windows (see bucket/HANDOFF-vapor-investigation-2026-05-14.md),
+// so the entire `app.http.client` / `Application.HTTP.Client` API is gated out on Windows.
+// Application.swift's automatic `clients.use(.http)` is also gated; users on Windows must
+// register a custom HTTP client via `app.clients.use(...)` if they need outbound HTTP.
+#if !os(Windows)
 import AsyncHTTPClient
 
 extension Application.Clients.Provider {
@@ -57,3 +63,5 @@ extension Application.HTTP {
         }
     }
 }
+
+#endif // !os(Windows)

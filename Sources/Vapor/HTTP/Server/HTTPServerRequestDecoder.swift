@@ -60,9 +60,15 @@ final class HTTPServerRequestDecoder: ChannelDuplexHandler, RemovableChannelHand
             case .ready:
                 // The certificate chain will only be avalable when configuring `customCertificateVerifyCallbackWithMetadata`.
                 // Since the certificate chain is validated during the handshake, we only collect it once and cache it.
+                #if !os(Windows)
                 let peerCertificateChain = self.validatedCertificateChainCache.lookup {
                     try? context.pipeline.syncOperations.nioSSL_peerValidatedCertificateChain()?.usingX509Certificates()
                 }
+                #else
+                // NIOSSL Swift module is unavailable on Windows; peer certificate metadata is
+                // therefore always nil on Windows.
+                let peerCertificateChain: ValidatedCertificateChain? = nil
+                #endif
                 /// Note: It is critical that `URI.init(path:)` is used here, _NOT_ `URI.init(string:)`. The following
                 /// example illustrates why:
                 ///

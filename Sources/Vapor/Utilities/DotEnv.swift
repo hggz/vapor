@@ -4,13 +4,17 @@ import Glibc
 import Musl
 #elseif canImport(Android)
 import Android
+#elseif canImport(WinSDK)
+import WinSDK
 #else
 import Darwin
 #endif
 import Logging
 import NIOCore
 import NIOPosix
+#if !os(Windows)
 import _NIOFileSystem
+#endif
 
 /// Reads dotenv (`.env`) files and loads them into the current process.
 ///
@@ -226,9 +230,29 @@ public struct DotEnvFile: Sendable {
     ///     - overwrite: If `true`, values already existing in the process' env
     ///                  will be overwritten. Defaults to `false`.
     public func load(overwrite: Bool = false) {
+        #if os(Windows)
+        // On Windows we use SetEnvironmentVariableW; the POSIX `setenv` is unavailable. We
+        // honour the `overwrite` flag by reading the variable first via GetEnvironmentVariableW.
+        for line in self.lines {
+            if !overwrite {
+                let buf = [WCHAR](repeating: 0, count: 1)
+                let existing = line.key.withCString(encodedAs: UTF16.self) { keyPtr -> DWORD in
+                    GetEnvironmentVariableW(keyPtr, UnsafeMutablePointer(mutating: buf), 1)
+                }
+                // Non-zero return = variable exists (truncated value), so skip.
+                if existing != 0 { continue }
+            }
+            _ = line.key.withCString(encodedAs: UTF16.self) { keyPtr in
+                line.value.withCString(encodedAs: UTF16.self) { valPtr in
+                    SetEnvironmentVariableW(keyPtr, valPtr)
+                }
+            }
+        }
+        #else
         for line in self.lines {
             setenv(line.key, line.value, overwrite ? 1 : 0)
         }
+        #endif
     }
     
     // MARK: - Concurrency
@@ -251,11 +275,17 @@ public struct DotEnvFile: Sendable {
         path: String,
         fileio: NonBlockingFileIO
     ) async throws -> DotEnvFile {
+        #if os(Windows)
+        // _NIOFileSystem is unavailable on Windows. Return an empty file so callers behave
+        // as if the .env didn't exist; users must set env vars through the actual environment.
+        return DotEnvFile(lines: [])
+        #else
         try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
             let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))
             var parser = Parser(source: buffer)
             return DotEnvFile(lines: parser.parse())
         }
+        #endif
     }
     
     /// Reads a dotenv file from the supplied path and loads it into the process.
@@ -276,8 +306,13 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         overwrite: Bool = false
     ) async throws {
+        #if os(Windows)
+        // No-op on Windows; _NIOFileSystem is unavailable.
+        _ = (path, fileio, overwrite)
+        #else
         let file = try await self.read(path: path, fileio: fileio)
         file.load(overwrite: overwrite)
+        #endif
     }
     
     /// Reads the dotenv files relevant to the environment and loads them into the process.
@@ -297,11 +332,16 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         logger: Logger = Logger(label: "dot-env-loggger")
     ) async {
+        #if os(Windows)
+        logger.debug("DotEnvFile: skipped on Windows (no _NIOFileSystem)")
+        _ = (path, fileio)
+        #else
         do {
             try await load(path: path, fileio: fileio, overwrite: false)
         } catch {
             logger.debug("Could not load \(path) file: \(error)")
         }
+        #endif
     }
     
     /// Reads the dotenv files relevant to the environment and loads them into the process.
@@ -321,9 +361,14 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         logger: Logger = Logger(label: "dot-env-loggger")
     ) async {
+        #if os(Windows)
+        logger.debug("DotEnvFile: skipped on Windows (no _NIOFileSystem)")
+        _ = (environment, fileio)
+        #else
         // Load specific .env first since values are not overridden.
         await DotEnvFile.load(path: ".env.\(environment.name)", fileio: fileio, logger: logger)
         await DotEnvFile.load(path: ".env", fileio: fileio, logger: logger)
+        #endif
     }
 }
 

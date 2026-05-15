@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(WinSDK)
+import WinSDK
+#endif
 
 extension Environment {    
     /// The process information of an environment. Wraps `ProcessInto.processInfo`.
@@ -24,9 +27,23 @@ extension Environment {
 
             nonmutating set (value) {
                 if let raw = value?.description {
+                    #if os(Windows)
+                    _ = member.withCString(encodedAs: UTF16.self) { keyPtr in
+                        raw.withCString(encodedAs: UTF16.self) { valPtr in
+                            SetEnvironmentVariableW(keyPtr, valPtr)
+                        }
+                    }
+                    #else
                     setenv(member, raw, 1)
+                    #endif
                 } else {
+                    #if os(Windows)
+                    _ = member.withCString(encodedAs: UTF16.self) { keyPtr in
+                        SetEnvironmentVariableW(keyPtr, nil)
+                    }
+                    #else
                     unsetenv(member)
+                    #endif
                 }
             }
         }
@@ -42,9 +59,23 @@ extension Environment {
 
             nonmutating set (value) {
                 if let raw = value {
+                    #if os(Windows)
+                    _ = member.withCString(encodedAs: UTF16.self) { keyPtr in
+                        raw.withCString(encodedAs: UTF16.self) { valPtr in
+                            SetEnvironmentVariableW(keyPtr, valPtr)
+                        }
+                    }
+                    #else
                     setenv(member, raw, 1)
+                    #endif
                 } else {
+                    #if os(Windows)
+                    _ = member.withCString(encodedAs: UTF16.self) { keyPtr in
+                        SetEnvironmentVariableW(keyPtr, nil)
+                    }
+                    #else
                     unsetenv(member)
+                    #endif
                 }
             }
         }

@@ -3,7 +3,20 @@ import NIOExtras
 import NIOHTTP1
 import NIOHTTP2
 import NIOHTTPCompression
+#if !os(Windows)
 import NIOSSL
+#else
+// NIOSSL's Swift module is unbuildable on Windows (#error("unsupported os") in 7+ files of
+// apple/swift-nio-ssl as of 2026-05). To keep HTTPServer.Configuration's public API surface
+// compiling on Windows we define uninhabited stubs for the TLS types here. They can only
+// hold `nil` in optional context and the runtime TLS code path is gated below. Callers that
+// try to enable TLS on Windows will fail to construct any value of these types and the
+// plaintext-only HTTP path will be taken. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+public enum TLSConfiguration: Sendable {}
+public enum NIOSSLCertificate: Sendable {}
+public enum NIOSSLVerificationResult: Sendable {}
+public enum NIOSSLVerificationResultWithMetadata: Sendable {}
+#endif
 import Logging
 import NIOPosix
 import NIOConcurrencyHelpers
@@ -507,7 +520,14 @@ private final class HTTPServerConnection: Sendable {
             /// Specify accepts per loop and backlog, and enable `SO_REUSEADDR` for the server itself.
             .serverChannelOption(ChannelOptions.maxMessagesPerRead, value: configuration.connectionsPerServerTick)
             .serverChannelOption(ChannelOptions.backlog, value: Int32(configuration.backlog))
+            #if !os(Windows)
+            // On Windows, `ChannelOptions.socket(_:_:)` and the POSIX socket option
+            // constants (`SOL_SOCKET`, `SO_REUSEADDR`, `IPPROTO_TCP`, `TCP_NODELAY`) are not
+            // available through the current `hggz/swift-nio:windows-joannis-mirror` substrate.
+            // The Windows kernel defaults are reasonable for a Hello-world probe; advanced
+            // socket tuning would require additional NIO Windows support.
             .serverChannelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0))
+            #endif
             
             /// Set handlers that are applied to the Server's channel.
             .serverChannelInitializer { channel in
@@ -521,6 +541,7 @@ private final class HTTPServerConnection: Sendable {
                 /// Copy the most up-to-date configuration.
                 let configuration = server.configuration
 
+                #if !os(Windows)
                 /// Add TLS handlers if configured.
                 if var tlsConfiguration = configuration.tlsConfiguration {
                     /// Prioritize http/2 if supported.
@@ -575,11 +596,26 @@ private final class HTTPServerConnection: Sendable {
                         configuration: configuration
                     )
                 }
+                #else
+                // Windows: TLS is unavailable (NIOSSL Swift module doesn't build). The
+                // `tlsConfiguration` property is typed as Optional<TLSConfiguration> where
+                // TLSConfiguration is an uninhabited stub, so it can only ever be nil here.
+                guard !configuration.supportVersions.contains(.two) else {
+                    fatalError("Plaintext HTTP/2 (h2c) not yet supported.")
+                }
+                return channel.pipeline.addVaporHTTP1Handlers(
+                    application: application,
+                    responder: responder,
+                    configuration: configuration
+                )
+                #endif
             }
             
             /// Enable `TCP_NODELAY` and `SO_REUSEADDR` for the accepted Channels.
+            #if !os(Windows)
             .childChannelOption(ChannelOptions.socket(IPPROTO_TCP, TCP_NODELAY), value: configuration.tcpNoDelay ? SocketOptionValue(1) : SocketOptionValue(0))
             .childChannelOption(ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR), value: configuration.reuseAddress ? SocketOptionValue(1) : SocketOptionValue(0))
+            #endif
             .childChannelOption(ChannelOptions.maxMessagesPerRead, value: 1)
         
         let channel: EventLoopFuture<Channel>
@@ -752,6 +788,7 @@ extension ChannelPipeline {
 }
 
 // MARK: Helper function for constructing NIOSSLServerHandler.
+#if !os(Windows)
 extension NIOSSLServerHandler {
     convenience init(context: NIOSSLContext, customVerifyCallback: NIOSSLCustomVerificationCallback?,
                      customVerifyCallbackWithMetadata: NIOSSLCustomVerificationCallbackWithMetadata?) {
@@ -765,6 +802,7 @@ extension NIOSSLServerHandler {
         }
     }
 }
+#endif
 
 // MARK: Response Compression Helpers
 extension HTTPServer.Configuration.ResponseCompressionConfiguration {

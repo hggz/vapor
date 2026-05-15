@@ -1,3 +1,10 @@
+// On Windows, _NIOFileSystem is unavailable upstream (POSIX-only syscalls in apple/swift-nio).
+// The entire FileIO surface — `Request.fileio`, the `FileIO` struct, and the chunked/streaming
+// file response helpers — is therefore gated out on Windows. User code that opts in to
+// `req.fileio.*` or `app.fileio` will fail to compile on Windows; this matches the gating
+// pattern used by Hummingbird (hummingbird-project/hummingbird#747) for its `Files/*` module.
+// See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+#if !os(Windows)
 import Foundation
 import NIOCore
 import _NIOFileSystem
@@ -621,3 +628,5 @@ extension HTTPHeaders.Range.Value {
         }
     }
 }
+
+#endif // !os(Windows)

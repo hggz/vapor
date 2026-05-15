@@ -1,7 +1,9 @@
 import NIOCore
 import NIOHTTP1
+#if !os(Windows)
 import NIOWebSocket
 import WebSocketKit
+#endif
 
 final class HTTPServerUpgradeHandler: ChannelDuplexHandler, RemovableChannelHandler {
     typealias InboundIn = Request
@@ -140,6 +142,7 @@ public protocol Upgrader: Sendable {
     func applyUpgrade(req: Request, res: Response) -> HTTPServerProtocolUpgrader
 }
 
+#if !os(Windows)
 /// Handles upgrading an HTTP connection to a WebSocket
 public struct WebSocketUpgrader: Upgrader, Sendable {
     var maxFrameSize: WebSocketMaxFrameSize
@@ -162,3 +165,5 @@ public struct WebSocketUpgrader: Upgrader, Sendable {
         return webSocketUpgrader
     }
 }
+
+#endif // !os(Windows)

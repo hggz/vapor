@@ -1,3 +1,8 @@
+// Environment.secret loads a secret from disk via _NIOFileSystem (async overloads) or NIO's
+// NonBlockingFileIO (deprecated overloads). The whole extension is gated out on Windows since
+// the async API is the canonical one and _NIOFileSystem has no Windows port upstream.
+// See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+#if !os(Windows)
 import NIOCore
 import NIOPosix
 import AsyncKit
@@ -110,3 +115,5 @@ extension Environment {
         return try await self.secret(path: filePath)
     }
 }
+
+#endif // !os(Windows)

@@ -80,7 +80,8 @@ let package = Package(
         .target(
             name: "Vapor",
             dependencies: [
-                .product(name: "AsyncHTTPClient", package: "async-http-client"),
+                .product(name: "AsyncHTTPClient", package: "async-http-client",
+                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
                 .product(name: "AsyncKit", package: "async-kit"),
                 .target(name: "CVaporBcrypt"),
                 .product(name: "ConsoleKit", package: "console-kit"),
@@ -96,16 +97,32 @@ let package = Package(
                 .product(name: "NIOHTTPCompression", package: "swift-nio-extras"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
-                .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                // NIOSSL Swift module fails to build on Windows (#error("unsupported os") in 7+
+                // source files as of swift-nio-ssl HEAD 2026-05). Gating Vapor's reference here
+                // suffices because nothing else in our Windows dep graph imports the NIOSSL Swift
+                // module (websocket-kit and async-http-client are also gated below).
+                .product(name: "NIOSSL", package: "swift-nio-ssl",
+                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Algorithms", package: "swift-algorithms"),
                 .product(name: "RoutingKit", package: "routing-kit"),
-                .product(name: "WebSocketKit", package: "websocket-kit"),
+                // WebSocketKit imports NIOSSL Swift unconditionally; gated on Windows alongside
+                // NIOSSL itself. Vapor's WebSocket helpers (Request.webSocket, RoutesBuilder.webSocket,
+                // WebSocketUpgrader) are gated on Windows to match.
+                .product(name: "WebSocketKit", package: "websocket-kit",
+                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
                 .product(name: "MultipartKit", package: "multipart-kit"),
                 .product(name: "Atomics", package: "swift-atomics"),
-                .product(name: "_NIOFileSystem", package: "swift-nio"),
-                .product(name: "_NIOFileSystemFoundationCompat", package: "swift-nio"),
+                // _NIOFileSystem has no Windows port upstream (see HANDOFF-vapor-investigation
+                // 2026-05-14): its syscalls reference POSIX-only APIs (fts(3), getpwuid_r,
+                // dirent, sendfile, …). Restrict to non-Windows platforms so Vapor itself can
+                // build on Windows; Vapor source files that import _NIOFileSystem are gated
+                // with `#if !os(Windows)` to match.
+                .product(name: "_NIOFileSystem", package: "swift-nio",
+                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
+                .product(name: "_NIOFileSystemFoundationCompat", package: "swift-nio",
+                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
                 .product(name: "X509", package: "swift-certificates"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
             ],

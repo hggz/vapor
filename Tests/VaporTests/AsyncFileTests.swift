@@ -1,3 +1,6 @@
+// These tests cover the _NIOFileSystem-backed FileIO API, which is gated out on Windows.
+// See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+#if !os(Windows)
 import XCTVapor
 import XCTest
 import Vapor
@@ -350,3 +353,5 @@ final class AsyncFileTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(readContent, content, "The content read from the file does not match the expected content.")
     }
 }
+
+#endif // !os(Windows)

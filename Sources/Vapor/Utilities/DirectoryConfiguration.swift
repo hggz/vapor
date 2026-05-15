@@ -4,6 +4,8 @@ import Glibc
 import Musl
 #elseif canImport(Android)
 import Android
+#elseif canImport(WinSDK)
+import WinSDK
 #else
 import Darwin.C
 #endif
@@ -38,7 +40,13 @@ public struct DirectoryConfiguration: Sendable {
     /// - returns: The derived `DirectoryConfig` if it could be created, otherwise just "./".
     public static func detect() -> DirectoryConfiguration {
         // get actual working directory
+        #if os(Windows)
+        // WinSDK does not export POSIX `PATH_MAX`. Use `MAX_PATH` (260) instead.
+        // The Windows `getcwd` signature takes `Int32` for the buffer length.
+        let cwd = getcwd(nil, Int32(MAX_PATH))
+        #else
         let cwd = getcwd(nil, Int(PATH_MAX))
+        #endif
         defer {
             if let cwd = cwd {
                 free(cwd)

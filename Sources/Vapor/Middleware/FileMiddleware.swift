@@ -1,3 +1,7 @@
+// FileMiddleware depends on _NIOFileSystem (FileSystem.shared for directory listing + read)
+// and on `Request.fileio.asyncStreamFile`, both of which are gated out on Windows. The whole
+// middleware is therefore unavailable on Windows. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+#if !os(Windows)
 import Foundation
 import NIOCore
 import _NIOFileSystem
@@ -243,3 +247,5 @@ extension Response {
         return self
     }
 }
+
+#endif // !os(Windows)

@@ -1,6 +1,8 @@
 @_documentation(visibility: internal) @_exported import AsyncKit
+#if !os(Windows)
 @_documentation(visibility: internal) @_exported import class AsyncHTTPClient.HTTPClient
 @_documentation(visibility: internal) @_exported import struct AsyncHTTPClient.HTTPClientError
+#endif
 @_documentation(visibility: internal) @_exported import Crypto
 @_documentation(visibility: internal) @_exported import RoutingKit
 @_documentation(visibility: internal) @_exported import ConsoleKit
@@ -25,6 +27,8 @@
 @_documentation(visibility: internal) @_exported import struct NIOHTTP1.HTTPVersion
 @_documentation(visibility: internal) @_exported import enum NIOHTTP1.HTTPResponseStatus
 @_documentation(visibility: internal) @_exported import enum NIOHTTPCompression.NIOHTTPDecompression
+#if !os(Windows)
 @_documentation(visibility: internal) @_exported import struct NIOSSL.TLSConfiguration
 @_documentation(visibility: internal) @_exported import WebSocketKit
+#endif
 @_documentation(visibility: internal) @_exported import MultipartKit

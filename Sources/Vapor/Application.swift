@@ -162,7 +162,11 @@ public final class Application: Sendable {
         self.servers.initialize()
         self.servers.use(.http)
         self.clients.initialize()
+        #if !os(Windows)
+        // The default `.http` client provider is AHC-backed and unavailable on Windows.
+        // Users on Windows must register a custom Client via `app.clients.use(...)` if needed.
         self.clients.use(.http)
+        #endif
         self.asyncCommands.use(RoutesCommand(), as: "routes")
     }
     

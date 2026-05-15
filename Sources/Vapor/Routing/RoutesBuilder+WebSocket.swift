@@ -1,3 +1,5 @@
+// WebSocket routes require WebSocketKit (pulls NIOSSL Swift, unbuildable on Windows).
+#if !os(Windows)
 import RoutingKit
 import WebSocketKit
 import NIOCore
@@ -69,3 +71,5 @@ extension RoutesBuilder {
         }
     }
 }
+
+#endif // !os(Windows)

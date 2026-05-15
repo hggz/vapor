@@ -1,3 +1,6 @@
+// WebSocket helpers depend on WebSocketKit, which pulls the NIOSSL Swift module (#error on
+// Windows). Gated out on Windows. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
+#if !os(Windows)
 import NIOCore
 import NIOHTTP1
 import WebSocketKit
@@ -143,3 +146,5 @@ extension WebSocket {
         ).get()
     }
 }
+
+#endif // !os(Windows)

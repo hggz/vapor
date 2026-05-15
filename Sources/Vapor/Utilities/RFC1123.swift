@@ -99,11 +99,17 @@ internal final class RFC1123DateCache: Sendable {
     func updateTimestamp() {
         // get the current time
         var date = time(nil)
-        
+
         // generate a key used for caching
         // this key is a unique id for each day
+        #if os(Windows)
+        // Windows MSVC: `time_t` is `__time64_t` (Int64) but `secondsInDay` is Int.
+        // Compute key as time_t to match the cache slot's declared type.
+        let key: time_t = date / time_t(secondsInDay)
+        #else
         let key = date / secondsInDay
-        
+        #endif
+
         self.cachedTimestampAndComponents.withLockedValue { cachedValues in
             // get time components
             let dateComponents: tm
@@ -112,7 +118,12 @@ internal final class RFC1123DateCache: Sendable {
                 dateComponents = cachedTimeComponents.components
             } else {
                 var tc = tm.init()
+                #if os(Windows)
+                // Windows MSVC has `gmtime_s` (with reversed argument order from POSIX gmtime_r).
+                _ = gmtime_s(&tc, &date)
+                #else
                 gmtime_r(&date, &tc)
+                #endif
                 dateComponents = tc
                 cachedValues.0 = (key: key, components: tc)
             }
@@ -124,7 +135,11 @@ internal final class RFC1123DateCache: Sendable {
             let weekDay: Int = numericCast(dateComponents.tm_wday) // days since Sunday [0-6]
             
             // get basic time info
+            #if os(Windows)
+            let t: Int = Int(date) % secondsInDay
+            #else
             let t: Int = date % secondsInDay
+            #endif
             let hours: Int = numericCast(t / 3600)
             let minutes: Int = numericCast((t / 60) % 60)
             let seconds: Int = numericCast(t % 60)

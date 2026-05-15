@@ -1,3 +1,6 @@
+// AHC-backed Client implementation; gated on Windows because AsyncHTTPClient transitively
+// requires the NIOSSL Swift module which is unbuildable on Windows.
+#if !os(Windows)
 import NIOCore
 import AsyncHTTPClient
 import Logging
@@ -66,3 +69,5 @@ private struct EventLoopHTTPClient: Client {
         return EventLoopHTTPClient(http: self.http, eventLoop: self.eventLoop, logger: self.logger, byteBufferAllocator: byteBufferAllocator)
     }
 }
+
+#endif // !os(Windows)

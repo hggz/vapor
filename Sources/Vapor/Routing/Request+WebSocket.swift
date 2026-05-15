@@ -1,3 +1,5 @@
+// WebSocket server upgrade requires WebSocketKit (pulls NIOSSL Swift, unbuildable on Windows).
+#if !os(Windows)
 import NIOCore
 import WebSocketKit
 import NIOHTTP1
@@ -19,3 +21,5 @@ extension Request {
          return res
      }
  }
+
+#endif // !os(Windows)
