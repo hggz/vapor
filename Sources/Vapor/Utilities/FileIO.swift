@@ -1,19 +1,20 @@
-// On Windows, _NIOFileSystem is unavailable upstream (POSIX-only syscalls in apple/swift-nio).
-// The entire FileIO surface — `Request.fileio`, the `FileIO` struct, and the chunked/streaming
-// file response helpers — is therefore gated out on Windows. User code that opts in to
-// `req.fileio.*` or `app.fileio` will fail to compile on Windows; this matches the gating
-// pattern used by Hummingbird (hummingbird-project/hummingbird#747) for its `Files/*` module.
-// See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
-#if !os(Windows)
+// On non-Windows platforms, the modern `Request.fileio` async API routes through
+// `_NIOFileSystem`. On Windows, `_NIOFileSystem` is unbuildable upstream (POSIX-only
+// syscalls in apple/swift-nio); Windows arms below route through Vapor's `WindowsFile`
+// shim (which is itself built on NIOPosix's `NonBlockingFileIO` plus Win32's
+// `GetFileAttributesExW`). The legacy futures-based API was already NIOPosix-only and
+// works on Windows unchanged. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
 import Foundation
 import NIOCore
+#if !os(Windows)
 import _NIOFileSystem
+import _NIOFileSystemFoundationCompat
+#endif
 import NIOHTTP1
 import NIOPosix
 import Logging
 import Crypto
 import NIOConcurrencyHelpers
-import _NIOFileSystemFoundationCompat
 
 extension Request {
     public var fileio: FileIO {
@@ -57,7 +58,9 @@ public struct FileIO: Sendable {
     /// HTTP request context.
     let request: Request
 
+    #if !os(Windows)
     let fileSystem: FileSystem = .shared
+    #endif
 
     /// Creates a new `FileIO`.
     ///
@@ -104,7 +107,7 @@ public struct FileIO: Sendable {
         onRead: @Sendable @escaping (ByteBuffer) -> EventLoopFuture<Void>
     ) -> EventLoopFuture<Void> {
         self.request.eventLoop.makeFutureWithTask {
-            guard let fileSize = try await FileSystem.shared.info(forFileAt: .init(path))?.size else {
+            guard let fileSize = try await _FileMetadata.load(path: path)?.size else {
                 throw Abort(.internalServerError)
             }
             try await self.read(
@@ -304,9 +307,17 @@ public struct FileIO: Sendable {
         fromOffset offset: Int64,
         byteCount: Int
     ) async throws -> ByteBuffer {
+        #if os(Windows)
+        return try await WindowsFile.readChunk(
+            at: path,
+            fromOffset: offset,
+            length: byteCount
+        )
+        #else
         return try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
             return try await handle.readChunk(fromAbsoluteOffset: offset, length: .bytes(Int64(byteCount)))
         }
+        #endif
     }
     
     /// Write the contents of buffer to a file at the supplied path.
@@ -344,15 +355,19 @@ public struct FileIO: Sendable {
         if let hash = request.application.storage[FileMiddleware.ETagHashes.self]?[path], hash.lastModified == lastModified {
             return hash.digestHex
         } else {
-            return try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
-                let buffer = try await handle.readToEnd(maximumSizeAllowed: .bytes(.max))
-                let digest = SHA256.hash(data: buffer.readableBytesView)
-
-                // update hash in dictionary
-                request.application.storage[FileMiddleware.ETagHashes.self]?[path] = FileMiddleware.ETagHashes.FileHash(lastModified: lastModified, digestHex: digest.hex)
-
-                return digest.hex
+            #if os(Windows)
+            let buffer = try await WindowsFile.readToEnd(at: path, maxBytes: Int.max)
+            #else
+            let buffer = try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
+                try await handle.readToEnd(maximumSizeAllowed: .bytes(.max))
             }
+            #endif
+            let digest = SHA256.hash(data: buffer.readableBytesView)
+
+            // update hash in dictionary
+            request.application.storage[FileMiddleware.ETagHashes.self]?[path] = FileMiddleware.ETagHashes.FileHash(lastModified: lastModified, digestHex: digest.hex)
+
+            return digest.hex
         }
     }
     
@@ -366,16 +381,26 @@ public struct FileIO: Sendable {
     ///     - path: Path to file on the disk.
     /// - returns: `ByteBuffer` containing the file data.
     public func collectFile(at path: String) async throws -> ByteBuffer {
-        guard let fileSize = try await FileSystem.shared.info(forFileAt: .init(path))?.size else {
+        guard let fileSize = try await _FileMetadata.load(path: path)?.size else {
             throw Abort(.internalServerError)
         }
         return try await self.read(path: path, fromOffset: 0, byteCount: Int(fileSize))
     }
     
-    /// Wrapper around `NIOFileSystem.FileChunks`.
-    /// This can be removed once `NIOFileSystem` reaches a stable API.
+    /// Wrapper around `NIOFileSystem.FileChunks` on non-Windows; on Windows it wraps an
+    /// `AsyncThrowingStream<ByteBuffer, Error>` driven by `WindowsFile.readChunks`.
+    /// This can be removed once `NIOFileSystem` gains a Windows port (or once Vapor migrates
+    /// to a unified file-system abstraction).
     public struct FileChunks: AsyncSequence {
         public typealias Element = ByteBuffer
+
+        #if os(Windows)
+        private let stream: AsyncThrowingStream<ByteBuffer, any Error>
+
+        init(stream: AsyncThrowingStream<ByteBuffer, any Error>) {
+            self.stream = stream
+        }
+        #else
         private let fileHandle: _NIOFileSystem.FileHandleProtocol
         private let fileChunks: _NIOFileSystem.FileChunks
 
@@ -383,8 +408,18 @@ public struct FileIO: Sendable {
             self.fileChunks = fileChunks
             self.fileHandle = fileHandle
         }
+        #endif
 
         public struct FileChunksIterator: AsyncIteratorProtocol {
+            #if os(Windows)
+            fileprivate var inner: AsyncThrowingStream<ByteBuffer, any Error>.AsyncIterator
+            fileprivate init(inner: AsyncThrowingStream<ByteBuffer, any Error>.AsyncIterator) {
+                self.inner = inner
+            }
+            public mutating func next() async throws -> ByteBuffer? {
+                try await inner.next()
+            }
+            #else
             private var iterator: _NIOFileSystem.FileChunks.AsyncIterator
             private let fileHandle: _NIOFileSystem.FileHandleProtocol
 
@@ -401,14 +436,23 @@ public struct FileIO: Sendable {
                 }
                 return chunk
             }
+            #endif
         }
-        
+
         public func closeHandle() async throws {
+            #if os(Windows)
+            // Windows: the underlying stream's onTermination handles the close. No-op here.
+            #else
             try await self.fileHandle.close()
+            #endif
         }
 
         public func makeAsyncIterator() -> FileChunksIterator {
+            #if os(Windows)
+            FileChunksIterator(inner: stream.makeAsyncIterator())
+            #else
             FileChunksIterator(wrapping: fileChunks.makeAsyncIterator(), fileHandle: fileHandle)
+            #endif
         }
     }
 
@@ -432,12 +476,33 @@ public struct FileIO: Sendable {
         offset: Int64? = nil,
         byteCount: Int? = nil
     ) async throws -> FileChunks {
+        #if os(Windows)
+        // Determine the effective range. `offset = nil` means start from 0; `byteCount = nil`
+        // means read to EOF — we resolve EOF by querying the file size up-front.
+        let startOffset: Int64 = offset ?? 0
+        let count: Int
+        if let byteCount {
+            count = byteCount
+        } else {
+            guard let size = try await WindowsFile.info(at: path)?.size else {
+                throw Abort(.internalServerError)
+            }
+            count = max(0, Int(size - startOffset))
+        }
+        let stream = WindowsFile.readChunks(
+            at: path,
+            fromOffset: startOffset,
+            byteCount: count,
+            chunkSize: chunkSize
+        )
+        return FileChunks(stream: stream)
+        #else
         let filePath = FilePath(path)
-        
+
         let readHandle = try await fileSystem.openFile(forReadingAt: filePath)
-        
+
         let chunks: _NIOFileSystem.FileChunks
-        
+
         if let offset {
             if let byteCount {
                 chunks = readHandle.readChunks(in: offset..<(offset+Int64(byteCount)), chunkLength: .bytes(Int64(chunkSize)))
@@ -449,6 +514,7 @@ public struct FileIO: Sendable {
         }
 
         return FileChunks(fileChunks: chunks, fileHandle: readHandle)
+        #endif
     }
     
     /// Write the contents of buffer to a file at the supplied path.
@@ -462,10 +528,14 @@ public struct FileIO: Sendable {
     ///     - buffer: The `ByteBuffer` to write.
     ///     - path: Path to file on the disk.
     public func writeFile(_ buffer: ByteBuffer, at path: String) async throws {
+        #if os(Windows)
+        try await WindowsFile.write(buffer, to: path)
+        #else
         // This returns the number of bytes written which we don't need
         _ = try await FileSystem.shared.withFileHandle(forWritingAt: .init(path), options: .newFile(replaceExisting: true)) { handle in
             try await handle.write(contentsOf: buffer, toAbsoluteOffset: 0)
         }
+        #endif
     }
 
     /// Generates a chunked `Response` for the specified file. This method respects values in
@@ -496,8 +566,9 @@ public struct FileIO: Sendable {
         advancedETagComparison: Bool = false,
         onCompleted: @escaping @Sendable (Result<Void, Error>) async throws -> () = { _ in }
     ) async throws -> Response {
-        // Get file attributes for this file.
-        guard let fileInfo = try await FileSystem.shared.info(forFileAt: .init(path)) else {
+        // Get file attributes for this file. Goes through `_FileMetadata` so the platform
+        // difference (FileSystem.shared on non-Windows vs WindowsFile on Windows) is hidden.
+        guard let fileInfo = try await _FileMetadata.load(path: path) else {
             throw Abort(.internalServerError)
         }
 
@@ -519,17 +590,17 @@ public struct FileIO: Sendable {
         let eTag: String
 
         if advancedETagComparison {
-            eTag = try await generateETagHash(path: path, lastModified: fileInfo.lastDataModificationTime.date)
+            eTag = try await generateETagHash(path: path, lastModified: fileInfo.lastModifiedDate)
         } else {
             // Generate ETag value, "last modified date in epoch time" + "-" + "file size"
-            eTag = "\"\(fileInfo.lastDataModificationTime.seconds)-\(fileInfo.size)\""
+            eTag = "\"\(fileInfo.lastModifiedSeconds)-\(fileInfo.size)\""
         }
         
         // Create empty headers array.
         var headers: HTTPHeaders = [:]
 
         // Respond with lastModified header
-        headers.lastModified = HTTPHeaders.LastModified(value: fileInfo.lastDataModificationTime.date)
+        headers.lastModified = HTTPHeaders.LastModified(value: fileInfo.lastModifiedDate)
 
         headers.replaceOrAdd(name: .eTag, value: eTag)
 
@@ -629,4 +700,3 @@ extension HTTPHeaders.Range.Value {
     }
 }
 
-#endif // !os(Windows)

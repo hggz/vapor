@@ -162,11 +162,10 @@ public final class Application: Sendable {
         self.servers.initialize()
         self.servers.use(.http)
         self.clients.initialize()
-        #if !os(Windows)
-        // The default `.http` client provider is AHC-backed and unavailable on Windows.
-        // Users on Windows must register a custom Client via `app.clients.use(...)` if needed.
+        // On Windows the `.http` provider registers a minimal NIOHTTP1-backed
+        // WindowsHTTPClient (plaintext only). On all other platforms it registers the
+        // AHC-backed EventLoopHTTPClient. See Sources/Vapor/HTTP/Client/WindowsHTTPClient.swift.
         self.clients.use(.http)
-        #endif
         self.asyncCommands.use(RoutesCommand(), as: "routes")
     }
     

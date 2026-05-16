@@ -1,10 +1,9 @@
-// FileMiddleware depends on _NIOFileSystem (FileSystem.shared for directory listing + read)
-// and on `Request.fileio.asyncStreamFile`, both of which are gated out on Windows. The whole
-// middleware is therefore unavailable on Windows. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
-#if !os(Windows)
+// FileMiddleware uses Vapor's `_FileMetadata` internal helper (which abstracts the platform
+// difference between `_NIOFileSystem.FileSystem.shared` on non-Windows and `WindowsFile` on
+// Windows). The streaming response path goes through `Request.fileio.asyncStreamFile` which
+// is also platform-portable now. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
 import Foundation
 import NIOCore
-import _NIOFileSystem
 
 /// Serves static files from a public directory.
 ///
@@ -78,9 +77,9 @@ public final class FileMiddleware: AsyncMiddleware {
         // create absolute path
         var absPath = self.publicDirectory + path
         
-        if let fileInfo = try await FileSystem.shared.info(forFileAt: .init(absPath)) {
+        if let fileInfo = try await _FileMetadata.load(path: absPath) {
             // path exists, check for directory or file
-            if fileInfo.type == .directory {
+            if fileInfo.isDirectory {
                 // directory exists, see if we can return a file
                 if absPath.hasSuffix("/") {
                     // If a directory, check for the default file
@@ -91,7 +90,7 @@ public final class FileMiddleware: AsyncMiddleware {
                             absPath = absPath + defaultFile
                         }
                         
-                        if try await FileSystem.shared.info(forFileAt: .init(absPath)) != nil {
+                        if try await _FileMetadata.load(path: absPath) != nil {
                             // If the default file exists, stream it
                             return try await request
                                 .fileio
@@ -248,4 +247,3 @@ extension Response {
     }
 }
 
-#endif // !os(Windows)
