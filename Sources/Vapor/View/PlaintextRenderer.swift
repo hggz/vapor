@@ -37,16 +37,16 @@ public struct PlaintextRenderer: ViewRenderer, Sendable {
     {
         self.logger.trace("Rendering plaintext view \(name) with \(context)")
         let eventLoop = self.eventLoopGroup.next()
-        #if os(Windows)
-        // _NIOFileSystem is unavailable on Windows. Users wanting templates on Windows must
-        // install a custom ViewRenderer via `app.views.use(...)`.
-        self.logger.error("PlaintextRenderer is unavailable on Windows (no _NIOFileSystem). Configure app.views.use(...) with a Windows-compatible renderer.")
-        _ = name
-        return eventLoop.makeFailedFuture(Abort(.notImplemented, reason: "PlaintextRenderer is unavailable on Windows (no _NIOFileSystem)"))
-        #else
         let path = name.hasPrefix("/")
             ? name
             : self.viewsDirectory + name
+        #if os(Windows)
+        // Windows: route through Vapor's WindowsFile shim (built on NIOPosix).
+        return eventLoop.makeFutureWithTask {
+            let buffer = try await WindowsFile.readToEnd(at: path, maxBytes: 32 * 1024 * 1024)
+            return View(data: buffer)
+        }
+        #else
         return eventLoop.makeFutureWithTask {
             try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
                 let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))

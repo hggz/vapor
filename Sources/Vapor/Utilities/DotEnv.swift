@@ -276,9 +276,12 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO
     ) async throws -> DotEnvFile {
         #if os(Windows)
-        // _NIOFileSystem is unavailable on Windows. Return an empty file so callers behave
-        // as if the .env didn't exist; users must set env vars through the actual environment.
-        return DotEnvFile(lines: [])
+        // Windows: route through Vapor's WindowsFile shim (built on NIOPosix). The `fileio`
+        // parameter is intentionally ignored — WindowsFile always uses NIOThreadPool.singleton.
+        _ = fileio
+        let buffer = try await WindowsFile.readToEnd(at: path, maxBytes: 32 * 1024 * 1024)
+        var parser = Parser(source: buffer)
+        return DotEnvFile(lines: parser.parse())
         #else
         try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
             let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))
@@ -306,13 +309,8 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         overwrite: Bool = false
     ) async throws {
-        #if os(Windows)
-        // No-op on Windows; _NIOFileSystem is unavailable.
-        _ = (path, fileio, overwrite)
-        #else
         let file = try await self.read(path: path, fileio: fileio)
         file.load(overwrite: overwrite)
-        #endif
     }
     
     /// Reads the dotenv files relevant to the environment and loads them into the process.
@@ -332,16 +330,11 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         logger: Logger = Logger(label: "dot-env-loggger")
     ) async {
-        #if os(Windows)
-        logger.debug("DotEnvFile: skipped on Windows (no _NIOFileSystem)")
-        _ = (path, fileio)
-        #else
         do {
             try await load(path: path, fileio: fileio, overwrite: false)
         } catch {
             logger.debug("Could not load \(path) file: \(error)")
         }
-        #endif
     }
     
     /// Reads the dotenv files relevant to the environment and loads them into the process.
@@ -361,14 +354,9 @@ public struct DotEnvFile: Sendable {
         fileio: NonBlockingFileIO,
         logger: Logger = Logger(label: "dot-env-loggger")
     ) async {
-        #if os(Windows)
-        logger.debug("DotEnvFile: skipped on Windows (no _NIOFileSystem)")
-        _ = (environment, fileio)
-        #else
         // Load specific .env first since values are not overridden.
         await DotEnvFile.load(path: ".env.\(environment.name)", fileio: fileio, logger: logger)
         await DotEnvFile.load(path: ".env", fileio: fileio, logger: logger)
-        #endif
     }
 }
 

@@ -1,12 +1,13 @@
-// Environment.secret loads a secret from disk via _NIOFileSystem (async overloads) or NIO's
-// NonBlockingFileIO (deprecated overloads). The whole extension is gated out on Windows since
-// the async API is the canonical one and _NIOFileSystem has no Windows port upstream.
+// Environment.secret loads a secret from disk. The deprecated overloads use NIO's
+// NonBlockingFileIO. The async overloads use `_NIOFileSystem` on non-Windows and Vapor's
+// `WindowsFile` shim (built on `NonBlockingFileIO`) on Windows.
 // See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
-#if !os(Windows)
 import NIOCore
 import NIOPosix
 import AsyncKit
+#if !os(Windows)
 import _NIOFileSystem
+#endif
 
 extension Environment {
     /// Reads a file's content for a secret. The secret key is the name of the environment variable that is expected to
@@ -82,12 +83,21 @@ extension Environment {
     ///   - On any kind of error `nil`. It is not currently possible to get error details.
     public static func secret(path: String) async throws -> String? {
         do {
+            #if os(Windows)
+            // On Windows, route through Vapor's WindowsFile shim (built on NIOPosix). 32 MB cap
+            // matches the non-Windows _NIOFileSystem path.
+            let buffer = try await WindowsFile.readToEnd(at: path, maxBytes: 32 * 1024 * 1024)
+            return buffer
+                .getString(at: buffer.readerIndex, length: buffer.readableBytes)!
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            #else
             return try await FileSystem.shared.withFileHandle(forReadingAt: .init(path)) { handle in
                 let buffer = try await handle.readToEnd(maximumSizeAllowed: .megabytes(32))
                 return buffer
                     .getString(at: buffer.readerIndex, length: buffer.readableBytes)!
                     .trimmingCharacters(in: .whitespacesAndNewlines)
             }
+            #endif
         } catch {
             return nil
         }
@@ -116,4 +126,3 @@ extension Environment {
     }
 }
 
-#endif // !os(Windows)
