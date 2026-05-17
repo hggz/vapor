@@ -27,8 +27,8 @@
 @_documentation(visibility: internal) @_exported import struct NIOHTTP1.HTTPVersion
 @_documentation(visibility: internal) @_exported import enum NIOHTTP1.HTTPResponseStatus
 @_documentation(visibility: internal) @_exported import enum NIOHTTPCompression.NIOHTTPDecompression
-#if !os(Windows)
 @_documentation(visibility: internal) @_exported import struct NIOSSL.TLSConfiguration
+#if !os(Windows)
 @_documentation(visibility: internal) @_exported import WebSocketKit
 #endif
 @_documentation(visibility: internal) @_exported import MultipartKit

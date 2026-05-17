@@ -104,12 +104,12 @@ let package = Package(
                 .product(name: "NIOHTTPCompression", package: "swift-nio-extras"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOHTTP2", package: "swift-nio-http2"),
-                // NIOSSL Swift module fails to build on Windows (#error("unsupported os") in 7+
-                // source files as of swift-nio-ssl HEAD 2026-05). Gating Vapor's reference here
-                // suffices because nothing else in our Windows dep graph imports the NIOSSL Swift
-                // module (websocket-kit and async-http-client are also gated below).
-                .product(name: "NIOSSL", package: "swift-nio-ssl",
-                         condition: .when(platforms: [.macOS, .macCatalyst, .iOS, .tvOS, .watchOS, .visionOS, .linux, .android])),
+                // NIOSSL Swift module now builds on Windows via the
+                // hggz/swift-nio-ssl:windows-winsock-headers fork (commit 7f9efd5 / Phase E,
+                // 2026-05-16). It's listed unconditionally here; gated callers in Vapor's
+                // sources (HTTPServer.swift, Security/ValidatedCertificateChain.swift, etc.)
+                // are also being un-gated. See bucket/WINDOWS_PATCHES-vapor-section-draft.md.
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 .product(name: "Crypto", package: "swift-crypto"),
                 .product(name: "Algorithms", package: "swift-algorithms"),

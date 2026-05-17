@@ -1,6 +1,5 @@
-// NIOSSL Swift module is unbuildable on Windows. The X.509 / NIOSSL bridging helpers in this
-// file are unavailable on Windows. See bucket/HANDOFF-vapor-investigation-2026-05-14.md.
-#if !os(Windows)
+// X.509 / NIOSSL bridging helpers. Now available on every platform that NIOSSL Swift
+// builds on, including Windows MSVC via hggz/swift-nio-ssl:windows-winsock-headers.
 import X509
 import NIOSSL
 import SwiftASN1
@@ -24,5 +23,3 @@ extension NIOSSL.ValidatedCertificateChain {
         return .init(uncheckedCertificateChain: try self.map { try $0.toX509Certificate() })
     }
 }
-
-#endif // !os(Windows)
