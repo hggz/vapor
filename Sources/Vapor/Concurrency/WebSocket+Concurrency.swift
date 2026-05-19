@@ -1,12 +1,7 @@
-// Server-side async WebSocket helpers and (non-Windows-only) WebSocket client helpers.
-// `WebSocket` / `WebSocketUpgrader` resolve to WebSocketKit on non-Windows; to Vapor's
-// Windows-only WSCore-backed shim on Windows. WebSocket.connect(...) is client-side and
-// requires WebSocketKit, so it stays gated to non-Windows.
+// Server-side async WebSocket helpers and WebSocket client helpers.
 import NIOCore
 import NIOHTTP1
-#if !os(Windows)
 import WebSocketKit
-#endif
 import RoutingKit
 import Foundation
 
@@ -83,7 +78,6 @@ extension RoutesBuilder {
     }
 }
 
-#if !os(Windows)
 extension WebSocket {
     @preconcurrency
     public static func connect(
@@ -150,4 +144,4 @@ extension WebSocket {
         ).get()
     }
 }
-#endif
+

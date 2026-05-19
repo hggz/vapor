@@ -1,16 +1,10 @@
-// WebSocket routes work on every platform: on non-Windows the underlying `WebSocket` and
-// `WebSocketUpgrader` come from WebSocketKit; on Windows they come from
-// `Sources/Vapor/HTTP/Server/WebSocketWindows.swift` (backed by WSCore). The only platform
-// gate here is the `import WebSocketKit` line — `WebSocketMaxFrameSize` is defined here
-// for non-Windows callers and in WebSocketWindows.swift for Windows callers.
+// WebSocket routes use WebSocketKit's `WebSocket` and `WebSocketUpgrader` on every platform
+// Vapor supports, including Windows MSVC since the NIOSSL Swift port (Phase E).
 import RoutingKit
-#if !os(Windows)
 import WebSocketKit
-#endif
 import NIOCore
 import NIOHTTP1
 
-#if !os(Windows)
 public struct WebSocketMaxFrameSize: Sendable, ExpressibleByIntegerLiteral {
     let value: Int
 
@@ -22,7 +16,6 @@ public struct WebSocketMaxFrameSize: Sendable, ExpressibleByIntegerLiteral {
         self.init(integerLiteral: 1 << 14)
     }
 }
-#endif
 
 // Deprecated
 extension RoutesBuilder {

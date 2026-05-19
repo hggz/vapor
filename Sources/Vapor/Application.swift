@@ -162,9 +162,9 @@ public final class Application: Sendable {
         self.servers.initialize()
         self.servers.use(.http)
         self.clients.initialize()
-        // On Windows the `.http` provider registers a minimal NIOHTTP1-backed
-        // WindowsHTTPClient (plaintext only). On all other platforms it registers the
-        // AHC-backed EventLoopHTTPClient. See Sources/Vapor/HTTP/Client/WindowsHTTPClient.swift.
+        // Default `.http` client provider is AHC-backed (EventLoopHTTPClient) on every
+        // platform Vapor supports, including Windows MSVC since the NIOSSL Swift port
+        // (hggz/swift-nio-ssl:windows-winsock-headers, Phase E).
         self.clients.use(.http)
         self.asyncCommands.use(RoutesCommand(), as: "routes")
     }

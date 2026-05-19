@@ -1,9 +1,6 @@
-// Server-side WebSocket upgrade. `WebSocket` and `WebSocketUpgrader` resolve to WebSocketKit
-// on non-Windows and to Vapor's Windows-only WSCore-backed shim on Windows.
+// Server-side WebSocket upgrade.
 import NIOCore
-#if !os(Windows)
 import WebSocketKit
-#endif
 import NIOHTTP1
 
 extension Request {
