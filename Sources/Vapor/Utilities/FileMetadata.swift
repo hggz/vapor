@@ -9,6 +9,12 @@
 import Foundation
 #if !os(Windows)
 import _NIOFileSystem
+// `_NIOFileSystemFoundationCompat` provides `FileInfo.Timespec.date` via
+// Foundation bridging. Swift 6.1's stricter `MemberImportVisibility`
+// diagnostic requires the defining module to be imported explicitly even
+// though `_NIOFileSystem` re-exports it. (Swift 6.3 tolerates the
+// implicit form.)
+import _NIOFileSystemFoundationCompat
 #endif
 
 /// Internal struct giving FileIO and FileMiddleware a single API for "did the path exist,
@@ -34,7 +40,11 @@ internal struct _FileMetadata: Sendable {
         return _FileMetadata(
             size: info.size,
             lastModifiedDate: info.lastDataModificationTime.date,
-            lastModifiedSeconds: info.lastDataModificationTime.seconds,
+            // `_NIOFileSystem.FileInfo.Timespec.seconds` is `Int` on
+            // macOS/Linux (where `time_t` is platform-`Int`) but the field
+            // is `Int64` on Windows (where `time_t` is `__time64_t`).
+            // Explicit `Int64(...)` keeps both platforms happy.
+            lastModifiedSeconds: Int64(info.lastDataModificationTime.seconds),
             isDirectory: info.type == .directory
         )
         #endif
